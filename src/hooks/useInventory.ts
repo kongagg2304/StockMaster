@@ -26,10 +26,8 @@ export const useInventory = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddOrderOpen, setIsAddOrderOpen] = useState(false);
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
-  
   const [splitModal, setSplitModal] = useState<{ batchId: string, targetStatus: string, maxQty: number } | null>(null);
   const [warehouseModal, setWarehouseModal] = useState<{ batchId: string } | null>(null);
-  
   const [splitWarehouse, setSplitWarehouse] = useState<WarehouseName | ''>(''); 
   const [splitQty, setSplitQty] = useState<number>(0);
   const [draggedBatchId, setDraggedBatchId] = useState<string | null>(null);
@@ -72,6 +70,13 @@ export const useInventory = () => {
     setProducts(prev => prev.map(p => p.sku === sku ? { ...p, color } : p));
   };
 
+  // NOWA FUNKCJA: Zapisywanie notatek dashboardu
+  const handleUpdateProductNote = (sku: string, note: string) => {
+    setProducts(prev => prev.map(p => 
+      p.sku === sku ? { ...p, dashboardNote: note } : p
+    ));
+  };
+
   const handleSplitClick = (batch: Batch) => {
     setSplitModal({ batchId: batch.id, targetStatus: batch.status, maxQty: batch.quantity });
     if (batch.status === 'stock' && batch.warehouse) {
@@ -94,6 +99,8 @@ export const useInventory = () => {
       quantity: Number(formData.get('quantity')),
       eta: formData.get('eta') as string || undefined,
       orderDate: formData.get('orderDate') as string || undefined,
+      plannedProductionDate: formData.get('plannedProductionDate') as string || undefined,
+      productionEndDate: formData.get('productionEndDate') as string || undefined,
       containerNo: formData.get('containerNo') as string || undefined,
       vesselName: formData.get('vesselName') as string || undefined,
       warehouse: formData.get('warehouse') as WarehouseName || undefined,
@@ -140,17 +147,35 @@ export const useInventory = () => {
       return;
     }
 
+    // Automatyczne daty
+    const today = new Date().toISOString().split('T')[0];
     saveToHistory();
-    setBatches(prev => prev.map(b => 
-      b.id === draggedBatchId ? { ...b, status: targetStatus } : b
-    ));
+    
+    setBatches(prev => prev.map(b => {
+      if (b.id !== draggedBatchId) return b;
+      
+      const updates: Partial<Batch> = { status: targetStatus };
+      
+      if (targetStatus === 'transit') {
+        updates.transitStartDate = today;
+        if (!b.eta) {
+           const date = new Date();
+           date.setDate(date.getDate() + 75);
+           updates.eta = date.toISOString().split('T')[0];
+        }
+      }
+      if (targetStatus === 'in_production') {
+        updates.productionStartDate = today;
+      }
+
+      return { ...b, ...updates };
+    }));
     setDraggedBatchId(null);
   };
 
   const confirmWarehouseSelection = (warehouseName: WarehouseName) => {
     if (!warehouseModal) return;
     saveToHistory();
-    
     const targetBatch = batches.find(b => b.id === warehouseModal.batchId);
     if (!targetBatch) return;
 
@@ -160,9 +185,7 @@ export const useInventory = () => {
         b.status === 'stock' && 
         b.warehouse === warehouseName
       );
-
       const newBatches = [...prev];
-
       if (existingBatchIndex >= 0) {
         newBatches[existingBatchIndex] = {
           ...newBatches[existingBatchIndex],
@@ -170,14 +193,9 @@ export const useInventory = () => {
         };
         return newBatches.filter(b => b.id !== targetBatch.id);
       } else {
-        return newBatches.map(b => b.id === targetBatch.id ? { 
-          ...b, 
-          status: 'stock', 
-          warehouse: warehouseName 
-        } : b);
+        return newBatches.map(b => b.id === targetBatch.id ? { ...b, status: 'stock', warehouse: warehouseName } : b);
       }
     });
-
     setWarehouseModal(null);
   };
 
@@ -188,10 +206,7 @@ export const useInventory = () => {
     const moveQty = Number(splitQty);
     const remainQty = maxQty - moveQty;
 
-    if (moveQty < 0 || moveQty > maxQty) {
-      alert("Nieprawidłowa ilość");
-      return;
-    }
+    if (moveQty < 0 || moveQty > maxQty) { alert("Błąd"); return; }
 
     setBatches(prev => {
       const newBatches = [...prev];
@@ -209,19 +224,16 @@ export const useInventory = () => {
 
       if (targetStatus === 'stock' && splitWarehouse) {
         newBatch.warehouse = splitWarehouse as WarehouseName;
-        
+        // POPRAWKA: używamy index do porównania
         const mergeTargetIndex = newBatches.findIndex((b, index) => 
           b.productSku === newBatch.productSku && 
           b.status === 'stock' && 
           b.warehouse === splitWarehouse &&
-          index !== originalBatchIndex // Zmieniamy b.id na index
+          index !== originalBatchIndex
         );
-
         if (mergeTargetIndex >= 0) {
            newBatches[mergeTargetIndex].quantity = Number((newBatches[mergeTargetIndex].quantity + newBatch.quantity).toFixed(2));
-           if (Math.abs(remainQty) < 0.01) {
-             return newBatches.filter((_, idx) => idx !== originalBatchIndex);
-           }
+           if (Math.abs(remainQty) < 0.01) return newBatches.filter((_, idx) => idx !== originalBatchIndex);
            return newBatches;
         }
       }
@@ -235,126 +247,18 @@ export const useInventory = () => {
       } 
       
       newBatches.push(newBatch);
-      
-      if (Math.abs(remainQty) < 0.01) {
-         return newBatches.filter((_, idx) => idx !== originalBatchIndex);
-      }
-
+      if (Math.abs(remainQty) < 0.01) return newBatches.filter((_, idx) => idx !== originalBatchIndex);
       return newBatches;
     });
     setSplitModal(null);
   };
 
   const handleProductCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n');
-      saveToHistory();
-      let addedCount = 0;
-      let updatedCount = 0;
-      let skippedCount = 0;
-      
-      const newProducts = [...products];
-
-      lines.slice(1).forEach(line => {
-        if (!line.trim()) return;
-        const separator = line.includes(';') ? ';' : ',';
-        const cols = line.split(separator).map(s => s.trim());
-        
-        if (cols.length < 1) return;
-        const sku = cols[0];
-        if (!sku) { skippedCount++; return; }
-
-        const name = cols[1] || 'Nowy Produkt';
-        const ean = cols[2] || '';
-        const dimension = cols[3] || '';
-        let finishRaw = cols[4] || 'Inne';
-        
-        const finishMap: Record<string, FinishType> = {
-            'poler': 'Poler', 'mat': 'Mat', 'carving': 'Carving', 'lappato': 'Lappato', 'inne': 'Inne'
-        };
-        let finish: FinishType = finishMap[finishRaw.toLowerCase()] || 'Inne';
-        const sales6Months = Number(cols[5]) || 0;
-
-        const existingIndex = newProducts.findIndex(p => p.sku === sku);
-        const productData: Product = {
-            sku, name, ean, dimension, finish, sales6Months,
-            sales1Month: 0, leadTimeDays: 75, safetyStockDays: 14, supplier: 'Import', stockW1: 0,
-        };
-
-        if (existingIndex >= 0) {
-            newProducts[existingIndex] = {
-                ...newProducts[existingIndex],
-                name, ean, dimension, finish, sales6Months,
-                leadTimeDays: newProducts[existingIndex].leadTimeDays || 75,
-                safetyStockDays: newProducts[existingIndex].safetyStockDays || 14
-            };
-            updatedCount++;
-        } else {
-            newProducts.push(productData);
-            addedCount++;
-        }
-      });
-      setProducts(newProducts);
-      alert(`Import Produktów Zakończony.\nDodano: ${addedCount}\nZaktualizowano: ${updatedCount}\nBłędy/Puste: ${skippedCount}`);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { const text = event.target?.result as string; const lines = text.split('\n'); saveToHistory(); let addedCount = 0; let updatedCount = 0; let skippedCount = 0; const newProducts = [...products]; lines.slice(1).forEach(line => { if (!line.trim()) return; const separator = line.includes(';') ? ';' : ','; const cols = line.split(separator).map(s => s.trim()); if (cols.length < 1) return; const sku = cols[0]; if (!sku) { skippedCount++; return; } const name = cols[1] || 'Nowy Produkt'; const ean = cols[2] || ''; const dimension = cols[3] || ''; let finishRaw = cols[4] || 'Inne'; const finishMap: Record<string, FinishType> = { 'poler': 'Poler', 'mat': 'Mat', 'carving': 'Carving', 'lappato': 'Lappato', 'inne': 'Inne' }; let finish: FinishType = finishMap[finishRaw.toLowerCase()] || 'Inne'; const sales6Months = Number(cols[5]) || 0; const existingIndex = newProducts.findIndex(p => p.sku === sku); const productData: Product = { sku, name, ean, dimension, finish, sales6Months, sales1Month: 0, leadTimeDays: 75, safetyStockDays: 14, supplier: 'Import', stockW1: 0, }; if (existingIndex >= 0) { newProducts[existingIndex] = { ...newProducts[existingIndex], name, ean, dimension, finish, sales6Months, leadTimeDays: newProducts[existingIndex].leadTimeDays || 75, safetyStockDays: newProducts[existingIndex].safetyStockDays || 14 }; updatedCount++; } else { newProducts.push(productData); addedCount++; } }); setProducts(newProducts); alert(`Import: Dodano: ${addedCount}, Zaktualizowano: ${updatedCount}`); }; reader.readAsText(file); e.target.value = '';
   };
 
   const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n');
-      saveToHistory();
-      let updatedCount = 0;
-      let skippedCount = 0;
-      const workingBatches = [...batches];
-
-      lines.slice(1).forEach(line => {
-        if (!line.trim()) return;
-        const separator = line.includes(';') ? ';' : ',';
-        const cols = line.split(separator).map(s => s.trim());
-        if (cols.length < 3) { skippedCount++; return; }
-
-        const sku = cols[0];
-        const qty = Number(cols[1]);
-        const warehouseInput = cols[2];
-
-        if (!sku || isNaN(qty)) { skippedCount++; return; }
-        if (!products.some(p => p.sku === sku)) { skippedCount++; return; }
-
-        const matchedWarehouse = WAREHOUSES.find(w => w.toLowerCase() === warehouseInput.toLowerCase());
-        if (!matchedWarehouse) { skippedCount++; return; }
-
-        const existingBatchIndex = workingBatches.findIndex(b => 
-            b.productSku === sku && b.status === 'stock' && b.warehouse === matchedWarehouse
-        );
-
-        if (existingBatchIndex >= 0) {
-            workingBatches[existingBatchIndex] = {
-                ...workingBatches[existingBatchIndex],
-                quantity: Number((workingBatches[existingBatchIndex].quantity + qty).toFixed(2))
-            };
-            updatedCount++;
-        } else {
-            workingBatches.push({
-                id: generateId(), productSku: sku, quantity: qty, status: 'stock', warehouse: matchedWarehouse
-            });
-            updatedCount++;
-        }
-      });
-      setBatches(workingBatches);
-      alert(`Zakończono import.\nPrzetworzono: ${updatedCount}\nPominięto: ${skippedCount} (błędy, brak SKU lub zły magazyn)`);
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+    const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { const text = event.target?.result as string; const lines = text.split('\n'); saveToHistory(); let updatedCount = 0; let skippedCount = 0; const workingBatches = [...batches]; lines.slice(1).forEach(line => { if (!line.trim()) return; const separator = line.includes(';') ? ';' : ','; const cols = line.split(separator).map(s => s.trim()); if (cols.length < 3) { skippedCount++; return; } const sku = cols[0]; const qty = Number(cols[1]); const warehouseInput = cols[2]; if (!sku || isNaN(qty)) { skippedCount++; return; } if (!products.some(p => p.sku === sku)) { skippedCount++; return; } const matchedWarehouse = WAREHOUSES.find(w => w.toLowerCase() === warehouseInput.toLowerCase()); if (!matchedWarehouse) { skippedCount++; return; } const existingBatchIndex = workingBatches.findIndex(b => b.productSku === sku && b.status === 'stock' && b.warehouse === matchedWarehouse); if (existingBatchIndex >= 0) { workingBatches[existingBatchIndex] = { ...workingBatches[existingBatchIndex], quantity: Number((workingBatches[existingBatchIndex].quantity + qty).toFixed(2)) }; updatedCount++; } else { workingBatches.push({ id: generateId(), productSku: sku, quantity: qty, status: 'stock', warehouse: matchedWarehouse }); updatedCount++; } }); setBatches(workingBatches); alert(`Import stanów: ${updatedCount} zaktualizowanych`); }; reader.readAsText(file); e.target.value = '';
   };
 
   const handleProductFormSubmit = (e: React.FormEvent) => {
@@ -375,15 +279,11 @@ export const useInventory = () => {
       safetyStockDays: Number(formData.get('safetyStockDays') || 14),
       color: editingProduct?.color 
     };
-
     saveToHistory();
     if (editingProduct) {
        setProducts(prev => prev.map(p => p.sku === editingProduct.sku ? productData : p));
     } else {
-       if (products.some(p => p.sku === productData.sku)) {
-         alert("Produkt o takim SKU już istnieje!");
-         return;
-       }
+       if (products.some(p => p.sku === productData.sku)) { alert("Produkt istnieje!"); return; }
        setProducts([...products, productData]);
     }
     setIsAddProductOpen(false);
@@ -397,10 +297,7 @@ export const useInventory = () => {
     const quantity = Number(formData.get('quantity'));
     const product = products.find(p => p.sku === skuOrEan || p.ean === skuOrEan);
 
-    if (!product) {
-      alert("Nie znaleziono produktu o takim SKU lub EAN w bazie. Najpierw dodaj produkt w kolumnie 1.");
-      return;
-    }
+    if (!product) { alert("Brak produktu"); return; }
     saveToHistory();
     setBatches([...batches, {
       id: generateId(),
@@ -413,7 +310,7 @@ export const useInventory = () => {
   };
 
   const handleDeleteProduct = (sku: string) => {
-    if(confirm("Czy na pewno usunąć produkt? To usunie również wszystkie jego partie z magazynu.")) {
+    if(confirm("Czy na pewno usunąć produkt?")) {
       saveToHistory();
       setProducts(prev => prev.filter(p => p.sku !== sku));
       setBatches(prev => prev.filter(b => b.productSku !== sku));
@@ -436,6 +333,7 @@ export const useInventory = () => {
     handleDeleteBatch,
     handleUpdateBatch,
     handleProductColorChange,
+    handleUpdateProductNote, // <--- EKSPORTOWANE DO UŻYCIA W APP.TSX
     handleSplitClick,
     handleBatchEditSubmit,
     handleDragStart,
