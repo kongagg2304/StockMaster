@@ -83,9 +83,10 @@ const ProductCard: React.FC<Props> = ({ product, allBatches, onEdit, onDelete, o
           </div>
         </div>
         
-        <div className="text-[10px] text-slate-400 border-t pt-2 mt-auto">
-           <div>ROP: {metrics.reorderPoint.toFixed(0)} m²</div>
-           <div>Sprzedaż: {metrics.dailySales.toFixed(1)}/dzień</div>
+        <div className="text-[10px] text-slate-400 border-t pt-2 mt-auto space-y-0.5">
+           <div className="flex justify-between"><span>Stan mag.:</span> <span className="font-bold text-slate-600">{metrics.totalStock.toFixed(0)} m²</span></div>
+           <div className="flex justify-between"><span>Sprzedaż:</span> <span>{metrics.dailySales.toFixed(1)}/dzień</span></div>
+           <div className="flex justify-between"><span>ROP:</span> <span>{metrics.reorderPoint.toFixed(0)} m²</span></div>
         </div>
       </div>
   );

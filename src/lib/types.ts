@@ -15,14 +15,13 @@ export interface Product {
   leadTimeDays: number;
   safetyStockDays: number;
   color?: ColorKey;
-  dashboardNote?: string; // 10. Miejsce na notatkę tekstową
+  dashboardNote?: string;
 }
 
 export interface Batch {
   id: string;
   productSku: string;
   quantity: number;
-  // Zaktualizowane statusy o proces produkcji
   status: 'stock' | 'transit' | 'ready' | 'in_production' | 'planned' | 'ordered';
   
   orderDate?: string;
@@ -39,20 +38,26 @@ export interface Batch {
 
 export interface ProductMetrics {
   totalStock: number;
-  totalInTransit: number; // 3. Ilość towaru która płynie w dostawie
-  dailySales: number;     // 4. Sprzedaż dzienna
-  daysInventoryOnHand: number; // 5. Zapas na ile dni
+  totalInTransit: number;
+  qtyReady: number; // NOWE: Do sortowania "Gotowe"
+  qtyInProduction: number;
+  qtyPlanned: number;
+  
+  dailySales: number;
+  daysInventoryOnHand: number;
   reorderPoint: number;
-  nextArrivalDate: string | null; // 9. Następna dostawa
+  
+  nextArrivalDate: string | null;
   daysToNextArrival: number | null;
+  
   stockoutGapDays: number;
+  predictedStockoutDate: string | null;
   
-  // Nowe/Zaktualizowane pola do Dashboardu
-  predictedStockoutDate: string | null; // 6. Przewidywany brak towaru (data)
-  predictedProductionEnd: string | null; // 7. Przewidywany czas zakończenia produkcji
-  oldestOrderDate: string | null;        // 8. Najstarsze zamówienie (data)
+  oldestOrderDate: string | null;
+  plannedProductionStart: string | null; // NOWE: Do sortowania "Data rozp. prod."
+  predictedProductionEnd: string | null;
   
-  decision: 'ORDER NOW' | 'URGENT GAP' | 'WAIT' | 'OK'; // 11. Status
+  decision: 'ORDER NOW' | 'URGENT GAP' | 'WAIT' | 'OK' | 'CRITICAL LOW';
 }
 
 export interface HistoryState {

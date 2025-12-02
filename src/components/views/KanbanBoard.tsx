@@ -25,7 +25,6 @@ interface Props {
   onDrop: (e: React.DragEvent, status: Batch['status']) => void;
 }
 
-// 1. Definiujemy typ kolumny, żeby TypeScript wiedział, że hasUpload/hasAddBtn są opcjonalne (?)
 type ColumnConfig = {
   id: Batch['status'];
   title: string;
@@ -33,8 +32,8 @@ type ColumnConfig = {
   bg: string;
   border: string;
   text: string;
-  hasUpload?: boolean; // Opcjonalne pole
-  hasAddBtn?: boolean; // Opcjonalne pole
+  hasUpload?: boolean;
+  hasAddBtn?: boolean;
 };
 
 const KanbanBoard: React.FC<Props> = ({
@@ -45,7 +44,6 @@ const KanbanBoard: React.FC<Props> = ({
   onDragStart, onDragOver, onDrop
 }) => {
 
-  // 2. Używamy tego typu przy definicji tablicy COLUMNS
   const COLUMNS: ColumnConfig[] = [
     { id: 'stock', title: '2. Magazyn', icon: <Upload size={14}/>, bg: 'bg-emerald-50/40', border: 'border-emerald-100', text: 'text-emerald-700 bg-emerald-50', hasUpload: true },
     { id: 'transit', title: '3. W Transporcie (75 dni)', icon: <Truck size={14}/>, bg: 'bg-blue-50/40', border: 'border-blue-100', text: 'text-blue-700 bg-blue-50' },
@@ -56,9 +54,9 @@ const KanbanBoard: React.FC<Props> = ({
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white overflow-hidden">
+    <div className="flex flex-col h-full bg-white overflow-hidden rounded-xl border border-slate-200 shadow-sm">
       
-      {/* --- NAGŁÓWEK TABELI (Sticky) --- */}
+      {/* --- NAGŁÓWEK TABELI (Teraz Zlockowany dzięki h-screen w App.tsx) --- */}
       <div className="overflow-x-auto overflow-y-hidden flex-shrink-0 bg-white border-b border-slate-200 shadow-sm z-20">
         <div className="flex min-w-max">
           
@@ -81,7 +79,6 @@ const KanbanBoard: React.FC<Props> = ({
                 {col.icon}
                 {col.title}
               </div>
-              {/* Teraz TypeScript wie, że hasUpload może być undefined, więc col.hasUpload && ... jest bezpieczne */}
               {col.hasUpload && (
                  <label className="cursor-pointer hover:opacity-80"><input type="file" className="hidden" onChange={onBatchImport} /><Upload size={16}/></label>
               )}
@@ -93,7 +90,7 @@ const KanbanBoard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* --- TREŚĆ TABELI (WIERSZE PRODUKTÓW) --- */}
+      {/* --- TREŚĆ TABELI (WIERSZE PRODUKTÓW) - To się teraz przewija wewnątrz --- */}
       <div className="flex-1 overflow-auto">
         <div className="min-w-max">
           {products.map(p => (
