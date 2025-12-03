@@ -18,8 +18,9 @@ export const useInventory = () => {
         stockW1: 500, 
         sales6Months: 3600, 
         sales1Month: 500, 
-        leadTimeDays: 134, // ZMIANA: 134 dni
-        safetyStockDays: 20 // ZMIANA: 20 dni
+        leadTimeDays: 134, 
+        safetyStockDays: 20,
+        daysInStockLast6Months: 180
       }
     ];
   });
@@ -305,8 +306,13 @@ export const useInventory = () => {
         let finish: FinishType = finishMap[finishRaw.toLowerCase()] || 'Inne'; 
         
         const sales6Months = Number(cols[5]) || 0; 
+        
+        // NOWOŚĆ: Kolumna 7 to Dni Dostępności (opcjonalna)
+        const daysInStock = cols[6] ? Number(cols[6]) : 180;
+
         const existingIndex = newProducts.findIndex(p => p.sku === sku); 
         
+        // --- POPRAWIONO LITERÓWKĘ TUTAJ (było constyb) ---
         const productData: Product = { 
           sku, 
           name, 
@@ -315,10 +321,10 @@ export const useInventory = () => {
           finish, 
           sales6Months, 
           sales1Month: 0, 
-          // ZMIANA: Domyślne 134 dni
           leadTimeDays: 134, 
-          // ZMIANA: Domyślne 20 dni
           safetyStockDays: 20, 
+          // Ustawiamy dni dostępności
+          daysInStockLast6Months: daysInStock,
           supplier: 'Import', 
           stockW1: 0, 
         }; 
@@ -331,9 +337,11 @@ export const useInventory = () => {
             dimension, 
             finish, 
             sales6Months, 
-            // Aktualizuj tylko jeśli nie ma wartości (lub użyj nowych domyślnych)
+            // Zachowaj istniejące ustawienia jeśli brak w imporcie lub nadpisz
             leadTimeDays: newProducts[existingIndex].leadTimeDays || 134, 
-            safetyStockDays: newProducts[existingIndex].safetyStockDays || 20 
+            safetyStockDays: newProducts[existingIndex].safetyStockDays || 20,
+            // Aktualizacja dni dostępności
+            daysInStockLast6Months: daysInStock || newProducts[existingIndex].daysInStockLast6Months || 180
           }; 
           updatedCount++; 
         } else { 
@@ -350,7 +358,42 @@ export const useInventory = () => {
   };
 
   const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { const text = event.target?.result as string; const lines = text.split('\n'); saveToHistory(); let updatedCount = 0; let skippedCount = 0; const workingBatches = [...batches]; lines.slice(1).forEach(line => { if (!line.trim()) return; const separator = line.includes(';') ? ';' : ','; const cols = line.split(separator).map(s => s.trim()); if (cols.length < 3) { skippedCount++; return; } const sku = cols[0]; const qty = Number(cols[1]); const warehouseInput = cols[2]; if (!sku || isNaN(qty)) { skippedCount++; return; } if (!products.some(p => p.sku === sku)) { skippedCount++; return; } const matchedWarehouse = WAREHOUSES.find(w => w.toLowerCase() === warehouseInput.toLowerCase()); if (!matchedWarehouse) { skippedCount++; return; } const existingBatchIndex = workingBatches.findIndex(b => b.productSku === sku && b.status === 'stock' && b.warehouse === matchedWarehouse); if (existingBatchIndex >= 0) { workingBatches[existingBatchIndex] = { ...workingBatches[existingBatchIndex], quantity: Number((workingBatches[existingBatchIndex].quantity + qty).toFixed(2)) }; updatedCount++; } else { workingBatches.push({ id: generateId(), productSku: sku, quantity: qty, status: 'stock', warehouse: matchedWarehouse }); updatedCount++; } }); setBatches(workingBatches); alert(`Import stanów: ${updatedCount} zaktualizowanych`); }; reader.readAsText(file); e.target.value = '';
+    const file = e.target.files?.[0]; 
+    if (!file) return; 
+    const reader = new FileReader(); 
+    reader.onload = (event) => { 
+      const text = event.target?.result as string; 
+      const lines = text.split('\n'); 
+      saveToHistory(); 
+      let updatedCount = 0; 
+      let skippedCount = 0; 
+      const workingBatches = [...batches]; 
+      lines.slice(1).forEach(line => { 
+        if (!line.trim()) return; 
+        const separator = line.includes(';') ? ';' : ','; 
+        const cols = line.split(separator).map(s => s.trim()); 
+        if (cols.length < 3) { skippedCount++; return; } 
+        const sku = cols[0]; 
+        const qty = Number(cols[1]); 
+        const warehouseInput = cols[2]; 
+        if (!sku || isNaN(qty)) { skippedCount++; return; } 
+        if (!products.some(p => p.sku === sku)) { skippedCount++; return; } 
+        const matchedWarehouse = WAREHOUSES.find(w => w.toLowerCase() === warehouseInput.toLowerCase()); 
+        if (!matchedWarehouse) { skippedCount++; return; } 
+        const existingBatchIndex = workingBatches.findIndex(b => b.productSku === sku && b.status === 'stock' && b.warehouse === matchedWarehouse); 
+        if (existingBatchIndex >= 0) { 
+          workingBatches[existingBatchIndex] = { ...workingBatches[existingBatchIndex], quantity: Number((workingBatches[existingBatchIndex].quantity + qty).toFixed(2)) }; 
+          updatedCount++; 
+        } else { 
+          workingBatches.push({ id: generateId(), productSku: sku, quantity: qty, status: 'stock', warehouse: matchedWarehouse }); 
+          updatedCount++; 
+        } 
+      }); 
+      setBatches(workingBatches); 
+      alert(`Import stanów: ${updatedCount} zaktualizowanych`); 
+    }; 
+    reader.readAsText(file); 
+    e.target.value = '';
   };
 
   const handleProductFormSubmit = (e: React.FormEvent) => {
@@ -367,8 +410,10 @@ export const useInventory = () => {
       stockW1: 0,
       sales6Months: Number(formData.get('sales6Months') || 0),
       sales1Month: 0,
-      leadTimeDays: Number(formData.get('leadTimeDays') || 134), // Zabezpieczenie formularza
-      safetyStockDays: Number(formData.get('safetyStockDays') || 20), // Zabezpieczenie formularza
+      leadTimeDays: Number(formData.get('leadTimeDays') || 134), 
+      safetyStockDays: Number(formData.get('safetyStockDays') || 20), 
+      // NOWE POLE Z FORMULARZA
+      daysInStockLast6Months: Number(formData.get('daysInStockLast6Months') || 180),
       color: editingProduct?.color 
     };
     saveToHistory();

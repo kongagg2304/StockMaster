@@ -34,15 +34,18 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
   const anyIncoming = totalInTransit + incomingSupply; 
   const netInventoryPosition = totalStock + anyIncoming; 
 
-  // --- 2. SPRZEDAŻ (ZMIANA: Tylko na podstawie 6 miesięcy) ---
-  const daily6m = (product.sales6Months || 0) / 180;
-  // const daily1m = ... (Ignorujemy, bo użytkownik nie wprowadza)
+  // --- 2. SPRZEDAŻ (POPRAWIONA LOGIKA - Rzeczywista Rotacja) ---
+  // Jeśli użytkownik nie podał dni dostępności, zakładamy 180 (pełny okres)
+  // Zabezpieczamy też przed dzieleniem przez 0 (minimum 1 dzień)
+  const daysActive = Math.max(1, Math.min(180, product.daysInStockLast6Months || 180));
+  
+  const daily6m = (product.sales6Months || 0) / daysActive;
   const dailySales = daily6m;
 
   // --- 3. WSKAŹNIKI ZAPASU ---
   const daysInventoryOnHand = dailySales > 0.01 ? totalStock / dailySales : 999;
   
-  const leadTimeDemand = dailySales * product.leadTimeDays; // To chcemy wyświetlić
+  const leadTimeDemand = dailySales * product.leadTimeDays;
   const safetyStockQty = dailySales * product.safetyStockDays;
   const reorderPoint = leadTimeDemand + safetyStockQty;
 
@@ -129,19 +132,19 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
 
   if (anyIncoming === 0 && totalStock <= safetyStockQty) {
     decision = 'CRITICAL LOW';
+  } else if (netInventoryPosition < reorderPoint) {
+    decision = 'ORDER NOW';
   } else if (totalInTransit > 0 && predictedStockoutDate) {
     decision = 'WAIT';
   } else if (incomingSupply > 0 && predictedStockoutDate) {
     decision = 'URGENT GAP';
-  } else if (netInventoryPosition < reorderPoint) {
-    decision = 'ORDER NOW';
   } else {
     decision = 'OK';
   }
 
   return {
     totalStock, totalInTransit, qtyReady, qtyInProduction, qtyPlanned,
-    dailySales, daysInventoryOnHand, reorderPoint, leadTimeDemand, // Zwracamy LTD
+    dailySales, daysInventoryOnHand, reorderPoint, leadTimeDemand,
     nextArrivalDate, daysToNextArrival, stockoutGapDays: 0,
     oldestOrderDate, plannedProductionStart, predictedProductionEnd, predictedStockoutDate,
     daysToStockout,

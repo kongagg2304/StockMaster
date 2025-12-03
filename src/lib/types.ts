@@ -16,6 +16,8 @@ export interface Product {
   sales1Month: number;
   leadTimeDays: number;
   safetyStockDays: number;
+  // NOWE POLE: Ile dni towar był faktycznie na stanie w ciągu ostatnich 6 miesięcy
+  daysInStockLast6Months?: number; 
   color?: ColorKey;
   dashboardNote?: string;
 }
@@ -48,7 +50,7 @@ export interface ProductMetrics {
   dailySales: number;
   daysInventoryOnHand: number;
   reorderPoint: number;
-  leadTimeDemand: number; // NOWE POLE: Popyt w czasie dostawy
+  leadTimeDemand: number;
   
   nextArrivalDate: string | null;
   daysToNextArrival: number | null;

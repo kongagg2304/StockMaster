@@ -50,19 +50,24 @@ const AddProductModal: React.FC<Props> = ({ onClose, onSubmit, editingProduct })
           <div className="border-t pt-2 mt-2">
             <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Parametry Logistyczne</h4>
             <div className="space-y-2">
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Sprzedaż 6-msc (m²)</label>
-                <input required name="sales6Months" type="number" step="0.01" defaultValue={editingProduct?.sales6Months} placeholder="np. 3600" className="w-full border p-2 rounded" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                    <label className="text-xs text-slate-500 block mb-1">Sprzedaż 6-msc (m²)</label>
+                    <input required name="sales6Months" type="number" step="0.01" defaultValue={editingProduct?.sales6Months} placeholder="np. 3600" className="w-full border p-2 rounded" />
+                </div>
+                <div>
+                    <label className="text-xs text-slate-500 block mb-1" title="Ile dni towar był fizycznie dostępny w ciągu ostatnich 180 dni?">Dni dostępności (max 180)</label>
+                    <input required name="daysInStockLast6Months" type="number" min="1" max="180" defaultValue={editingProduct?.daysInStockLast6Months || 180} className="w-full border p-2 rounded bg-yellow-50 focus:bg-white transition-colors" />
+                </div>
               </div>
+              
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-500 block mb-1">Lead Time (Dni)</label>
-                  {/* ZMIANA: Domyślnie 134 dni (45+14+75) */}
                   <input required name="leadTimeDays" type="number" defaultValue={editingProduct?.leadTimeDays || 134} className="w-full border p-2 rounded" />
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 block mb-1">Zapas Bezp. (Dni)</label>
-                  {/* ZMIANA: Domyślnie 20 dni */}
                   <input required name="safetyStockDays" type="number" defaultValue={editingProduct?.safetyStockDays || 20} className="w-full border p-2 rounded" />
                 </div>
               </div>
