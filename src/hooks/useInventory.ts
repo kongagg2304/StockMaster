@@ -4,10 +4,23 @@ import { generateId } from '../lib/utils';
 import { WAREHOUSES, type WarehouseName } from '../lib/constants';
 
 export const useInventory = () => {
+  // Domyślny stan produktów (zaktualizowany do nowych standardów czasowych)
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('products_v2');
     return saved ? JSON.parse(saved) : [
-      { sku: 'GRES-001', ean: '5901234567890', name: 'Gres Szkliwiony Carrara', dimension: '60x60', finish: 'Poler', supplier: 'Ceramica IT', stockW1: 500, sales6Months: 3600, sales1Month: 500, leadTimeDays: 75, safetyStockDays: 14 }
+      { 
+        sku: 'GRES-001', 
+        ean: '5901234567890', 
+        name: 'Gres Szkliwiony Carrara', 
+        dimension: '60x60', 
+        finish: 'Poler', 
+        supplier: 'Ceramica IT', 
+        stockW1: 500, 
+        sales6Months: 3600, 
+        sales1Month: 500, 
+        leadTimeDays: 134, // ZMIANA: 134 dni
+        safetyStockDays: 20 // ZMIANA: 20 dni
+      }
     ];
   });
 
@@ -70,7 +83,7 @@ export const useInventory = () => {
     setProducts(prev => prev.map(p => p.sku === sku ? { ...p, color } : p));
   };
 
-  // NOWA FUNKCJA: Zapisywanie notatek dashboardu
+  // Zapisywanie notatek dashboardu
   const handleUpdateProductNote = (sku: string, note: string) => {
     setProducts(prev => prev.map(p => 
       p.sku === sku ? { ...p, dashboardNote: note } : p
@@ -224,7 +237,6 @@ export const useInventory = () => {
 
       if (targetStatus === 'stock' && splitWarehouse) {
         newBatch.warehouse = splitWarehouse as WarehouseName;
-        // POPRAWKA: używamy index do porównania
         const mergeTargetIndex = newBatches.findIndex((b, index) => 
           b.productSku === newBatch.productSku && 
           b.status === 'stock' && 
@@ -253,8 +265,88 @@ export const useInventory = () => {
     setSplitModal(null);
   };
 
+  // --- ZAKTUALIZOWANA FUNKCJA IMPORTU CSV ---
   const handleProductCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { const text = event.target?.result as string; const lines = text.split('\n'); saveToHistory(); let addedCount = 0; let updatedCount = 0; let skippedCount = 0; const newProducts = [...products]; lines.slice(1).forEach(line => { if (!line.trim()) return; const separator = line.includes(';') ? ';' : ','; const cols = line.split(separator).map(s => s.trim()); if (cols.length < 1) return; const sku = cols[0]; if (!sku) { skippedCount++; return; } const name = cols[1] || 'Nowy Produkt'; const ean = cols[2] || ''; const dimension = cols[3] || ''; let finishRaw = cols[4] || 'Inne'; const finishMap: Record<string, FinishType> = { 'poler': 'Poler', 'mat': 'Mat', 'carving': 'Carving', 'lappato': 'Lappato', 'inne': 'Inne' }; let finish: FinishType = finishMap[finishRaw.toLowerCase()] || 'Inne'; const sales6Months = Number(cols[5]) || 0; const existingIndex = newProducts.findIndex(p => p.sku === sku); const productData: Product = { sku, name, ean, dimension, finish, sales6Months, sales1Month: 0, leadTimeDays: 75, safetyStockDays: 14, supplier: 'Import', stockW1: 0, }; if (existingIndex >= 0) { newProducts[existingIndex] = { ...newProducts[existingIndex], name, ean, dimension, finish, sales6Months, leadTimeDays: newProducts[existingIndex].leadTimeDays || 75, safetyStockDays: newProducts[existingIndex].safetyStockDays || 14 }; updatedCount++; } else { newProducts.push(productData); addedCount++; } }); setProducts(newProducts); alert(`Import: Dodano: ${addedCount}, Zaktualizowano: ${updatedCount}`); }; reader.readAsText(file); e.target.value = '';
+    const file = e.target.files?.[0]; 
+    if (!file) return; 
+    
+    const reader = new FileReader(); 
+    reader.onload = (event) => { 
+      const text = event.target?.result as string; 
+      const lines = text.split('\n'); 
+      
+      saveToHistory(); 
+      let addedCount = 0; 
+      let updatedCount = 0; 
+      let skippedCount = 0; 
+      const newProducts = [...products]; 
+      
+      lines.slice(1).forEach(line => { 
+        if (!line.trim()) return; 
+        const separator = line.includes(';') ? ';' : ','; 
+        const cols = line.split(separator).map(s => s.trim()); 
+        if (cols.length < 1) return; 
+        
+        const sku = cols[0]; 
+        if (!sku) { skippedCount++; return; } 
+        
+        const name = cols[1] || 'Nowy Produkt'; 
+        const ean = cols[2] || ''; 
+        const dimension = cols[3] || ''; 
+        
+        let finishRaw = cols[4] || 'Inne'; 
+        const finishMap: Record<string, FinishType> = { 
+          'poler': 'Poler', 
+          'mat': 'Mat', 
+          'carving': 'Carving', 
+          'lappato': 'Lappato', 
+          'inne': 'Inne' 
+        }; 
+        let finish: FinishType = finishMap[finishRaw.toLowerCase()] || 'Inne'; 
+        
+        const sales6Months = Number(cols[5]) || 0; 
+        const existingIndex = newProducts.findIndex(p => p.sku === sku); 
+        
+        const productData: Product = { 
+          sku, 
+          name, 
+          ean, 
+          dimension, 
+          finish, 
+          sales6Months, 
+          sales1Month: 0, 
+          // ZMIANA: Domyślne 134 dni
+          leadTimeDays: 134, 
+          // ZMIANA: Domyślne 20 dni
+          safetyStockDays: 20, 
+          supplier: 'Import', 
+          stockW1: 0, 
+        }; 
+        
+        if (existingIndex >= 0) { 
+          newProducts[existingIndex] = { 
+            ...newProducts[existingIndex], 
+            name, 
+            ean, 
+            dimension, 
+            finish, 
+            sales6Months, 
+            // Aktualizuj tylko jeśli nie ma wartości (lub użyj nowych domyślnych)
+            leadTimeDays: newProducts[existingIndex].leadTimeDays || 134, 
+            safetyStockDays: newProducts[existingIndex].safetyStockDays || 20 
+          }; 
+          updatedCount++; 
+        } else { 
+          newProducts.push(productData); 
+          addedCount++; 
+        } 
+      }); 
+      
+      setProducts(newProducts); 
+      alert(`Import: Dodano: ${addedCount}, Zaktualizowano: ${updatedCount}`); 
+    }; 
+    reader.readAsText(file); 
+    e.target.value = '';
   };
 
   const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,8 +367,8 @@ export const useInventory = () => {
       stockW1: 0,
       sales6Months: Number(formData.get('sales6Months') || 0),
       sales1Month: 0,
-      leadTimeDays: Number(formData.get('leadTimeDays') || 75),
-      safetyStockDays: Number(formData.get('safetyStockDays') || 14),
+      leadTimeDays: Number(formData.get('leadTimeDays') || 134), // Zabezpieczenie formularza
+      safetyStockDays: Number(formData.get('safetyStockDays') || 20), // Zabezpieczenie formularza
       color: editingProduct?.color 
     };
     saveToHistory();
@@ -333,7 +425,7 @@ export const useInventory = () => {
     handleDeleteBatch,
     handleUpdateBatch,
     handleProductColorChange,
-    handleUpdateProductNote, // <--- EKSPORTOWANE DO UŻYCIA W APP.TSX
+    handleUpdateProductNote,
     handleSplitClick,
     handleBatchEditSubmit,
     handleDragStart,

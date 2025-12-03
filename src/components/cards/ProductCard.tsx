@@ -22,19 +22,23 @@ const ProductCard: React.FC<Props> = ({ product, allBatches, onEdit, onDelete, o
     : { border: 'border-l-slate-200', bg: 'bg-white' };
 
   let statusBadgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
-  let statusText = 'STAN OK';
+  let statusText = 'OK';
 
-  if (metrics.decision === 'ORDER NOW') {
+  if (metrics.decision === 'CRITICAL LOW') {
+    if (!product.color) { styles.border = 'border-l-red-900'; styles.bg = 'bg-red-50'; }
+    statusBadgeColor = 'bg-red-900 text-white border-red-950';
+    statusText = 'STAN KRYTYCZNY';
+  } else if (metrics.decision === 'ORDER NOW') {
     if (!product.color) { styles.border = 'border-l-red-500'; styles.bg = 'bg-red-50'; }
     statusBadgeColor = 'bg-red-100 text-red-700 border-red-200';
-    statusText = 'ZAMAWIAJ TERAZ';
+    statusText = 'ZAMAWIAJ';
   } else if (metrics.decision === 'URGENT GAP') {
     if (!product.color) { styles.border = 'border-l-orange-500'; styles.bg = 'bg-orange-50'; }
     statusBadgeColor = 'bg-orange-100 text-orange-700 border-orange-200';
-    statusText = 'LUKA W DOSTAWACH';
+    statusText = 'LUKA CZASOWA';
   } else if (metrics.decision === 'WAIT') {
-    if (!product.color) { styles.border = 'border-l-blue-400'; }
-    statusBadgeColor = 'bg-blue-100 text-blue-700 border-blue-200';
+    if (!product.color) { styles.border = 'border-l-yellow-400'; styles.bg = 'bg-yellow-50'; }
+    statusBadgeColor = 'bg-yellow-100 text-yellow-700 border-yellow-200';
     statusText = 'CZEKAJ NA DOSTAWĘ';
   } else {
     statusBadgeColor = 'bg-green-100 text-green-700 border-green-200';
@@ -85,8 +89,11 @@ const ProductCard: React.FC<Props> = ({ product, allBatches, onEdit, onDelete, o
         
         <div className="text-[10px] text-slate-400 border-t pt-2 mt-auto space-y-0.5">
            <div className="flex justify-between"><span>Stan mag.:</span> <span className="font-bold text-slate-600">{metrics.totalStock.toFixed(0)} m²</span></div>
-           <div className="flex justify-between"><span>Sprzedaż:</span> <span>{metrics.dailySales.toFixed(1)}/dzień</span></div>
-           <div className="flex justify-between"><span>ROP:</span> <span>{metrics.reorderPoint.toFixed(0)} m²</span></div>
+           <div className="flex justify-between"><span>Sprzedaż:</span> <span>{metrics.dailySales.toFixed(2)}/dzień</span></div>
+           <div className="flex justify-between" title="Reorder Point / Lead Time Demand">
+             <span>ROP / LTD:</span> 
+             <span>{metrics.reorderPoint.toFixed(0)} / {metrics.leadTimeDemand.toFixed(0)}</span>
+           </div>
         </div>
       </div>
   );

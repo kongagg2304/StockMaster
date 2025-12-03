@@ -57,11 +57,13 @@ const AddProductModal: React.FC<Props> = ({ onClose, onSubmit, editingProduct })
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-500 block mb-1">Lead Time (Dni)</label>
-                  <input required name="leadTimeDays" type="number" defaultValue={editingProduct?.leadTimeDays || 75} className="w-full border p-2 rounded" />
+                  {/* ZMIANA: Domyślnie 134 dni (45+14+75) */}
+                  <input required name="leadTimeDays" type="number" defaultValue={editingProduct?.leadTimeDays || 134} className="w-full border p-2 rounded" />
                 </div>
                 <div>
                   <label className="text-xs text-slate-500 block mb-1">Zapas Bezp. (Dni)</label>
-                  <input required name="safetyStockDays" type="number" defaultValue={editingProduct?.safetyStockDays || 14} className="w-full border p-2 rounded" />
+                  {/* ZMIANA: Domyślnie 20 dni */}
+                  <input required name="safetyStockDays" type="number" defaultValue={editingProduct?.safetyStockDays || 20} className="w-full border p-2 rounded" />
                 </div>
               </div>
             </div>

@@ -4,8 +4,8 @@ export const generateId = () => `id-${Date.now()}-${Math.random().toString(36).s
 
 const ESTIMATED_TIMES = {
   TRANSIT: 75,
-  READY: 14,
-  IN_PRODUCTION: 45,
+  READY: 89,
+  IN_PRODUCTION: 134,
   PLANNED: 90
 };
 
@@ -30,27 +30,30 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
   const qtyPlanned = productBatches.filter(b => b.status === 'planned').reduce((sum, b) => sum + b.quantity, 0);
   const qtyOrdered = productBatches.filter(b => b.status === 'ordered').reduce((sum, b) => sum + b.quantity, 0);
 
-  const netInventoryPosition = totalStock + totalInTransit + qtyReady + qtyInProduction + qtyPlanned + qtyOrdered;
+  const incomingSupply = qtyReady + qtyInProduction + qtyPlanned + qtyOrdered; 
+  const anyIncoming = totalInTransit + incomingSupply; 
+  const netInventoryPosition = totalStock + anyIncoming; 
 
-  // --- 2. SPRZEDAŻ ---
+  // --- 2. SPRZEDAŻ (ZMIANA: Tylko na podstawie 6 miesięcy) ---
   const daily6m = (product.sales6Months || 0) / 180;
-  const daily1m = product.sales1Month ? product.sales1Month / 30 : daily6m;
-  const dailySales = Math.max(daily6m, daily1m);
+  // const daily1m = ... (Ignorujemy, bo użytkownik nie wprowadza)
+  const dailySales = daily6m;
 
   // --- 3. WSKAŹNIKI ZAPASU ---
   const daysInventoryOnHand = dailySales > 0.01 ? totalStock / dailySales : 999;
-  const leadTimeDemand = dailySales * product.leadTimeDays;
+  
+  const leadTimeDemand = dailySales * product.leadTimeDays; // To chcemy wyświetlić
   const safetyStockQty = dailySales * product.safetyStockDays;
   const reorderPoint = leadTimeDemand + safetyStockQty;
 
-  // --- 4. SYMULACJA (Gap Analysis) ---
+  // --- 4. SYMULACJA ---
   const arrivalsMap: Record<string, number> = {};
 
   const scheduleArrival = (batch: Batch, defaultDelay: number, dateField?: string) => {
     let arrivalDate: Date;
     if (dateField && batch[dateField as keyof Batch]) {
       arrivalDate = new Date(batch[dateField as keyof Batch] as string);
-      if (batch.status === 'in_production') arrivalDate = addDays(arrivalDate, 7);
+      if (batch.status === 'in_production') arrivalDate = addDays(arrivalDate, 14 + 75);
     } else {
       arrivalDate = addDays(today, defaultDelay);
     }
@@ -82,7 +85,14 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     }
   }
 
-  // --- 5. DATY SORTOWANIA ---
+  // --- 5. DNI DO BRAKU ---
+  let daysToStockout: number | null = null;
+  if (predictedStockoutDate) {
+    const stockoutDateObj = new Date(predictedStockoutDate);
+    daysToStockout = Math.ceil((stockoutDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  // --- 6. DATY POMOCNICZE ---
   const arrivalDates = Object.keys(arrivalsMap).sort();
   const nextArrivalStr = arrivalDates.find(d => d >= formatDate(today));
   let nextArrivalDate: string | null = null;
@@ -93,7 +103,6 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     daysToNextArrival = Math.ceil((new Date(nextArrivalStr).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // Najstarsze zamówienie
   const orderedBatches = productBatches.filter(b => b.status === 'ordered' && b.orderDate);
   let oldestOrderDate: string | null = null;
   if (orderedBatches.length > 0) {
@@ -101,7 +110,6 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     oldestOrderDate = orderedBatches[0].orderDate || null;
   }
 
-  // Zaplanowana produkcja (START)
   const plannedBatches = productBatches.filter(b => b.status === 'planned' && b.plannedProductionDate);
   let plannedProductionStart: string | null = null;
   if (plannedBatches.length > 0) {
@@ -109,7 +117,6 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     plannedProductionStart = plannedBatches[0].plannedProductionDate || null;
   }
 
-  // Koniec produkcji
   const productionBatches = productBatches.filter(b => b.status === 'in_production' && b.productionEndDate);
   let predictedProductionEnd: string | null = null;
   if (productionBatches.length > 0) {
@@ -117,24 +124,27 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
      predictedProductionEnd = productionBatches[0].productionEndDate || null;
   }
 
-  // --- 6. DECYZJA ---
+  // --- 7. DECYZJA ---
   let decision: ProductMetrics['decision'] = 'OK';
 
-  if (totalStock < safetyStockQty && dailySales > 0) {
-    decision = predictedStockoutDate ? 'URGENT GAP' : 'CRITICAL LOW';
-  } else if (predictedStockoutDate) {
+  if (anyIncoming === 0 && totalStock <= safetyStockQty) {
+    decision = 'CRITICAL LOW';
+  } else if (totalInTransit > 0 && predictedStockoutDate) {
+    decision = 'WAIT';
+  } else if (incomingSupply > 0 && predictedStockoutDate) {
     decision = 'URGENT GAP';
   } else if (netInventoryPosition < reorderPoint) {
     decision = 'ORDER NOW';
-  } else if (totalStock < reorderPoint && netInventoryPosition >= reorderPoint) {
-    decision = 'WAIT';
+  } else {
+    decision = 'OK';
   }
 
   return {
     totalStock, totalInTransit, qtyReady, qtyInProduction, qtyPlanned,
-    dailySales, daysInventoryOnHand, reorderPoint,
+    dailySales, daysInventoryOnHand, reorderPoint, leadTimeDemand, // Zwracamy LTD
     nextArrivalDate, daysToNextArrival, stockoutGapDays: 0,
     oldestOrderDate, plannedProductionStart, predictedProductionEnd, predictedStockoutDate,
+    daysToStockout,
     decision
   };
 };

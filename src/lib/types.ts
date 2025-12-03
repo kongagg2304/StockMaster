@@ -2,6 +2,8 @@ export type FinishType = 'Poler' | 'Mat' | 'Carving' | 'Lappato' | 'Inne';
 
 export type ColorKey = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'cyan' | 'gray' | 'brown';
 
+export type DecisionStatus = 'ORDER NOW' | 'URGENT GAP' | 'WAIT' | 'OK' | 'CRITICAL LOW';
+
 export interface Product {
   sku: string;
   ean: string;
@@ -39,25 +41,27 @@ export interface Batch {
 export interface ProductMetrics {
   totalStock: number;
   totalInTransit: number;
-  qtyReady: number; // NOWE: Do sortowania "Gotowe"
+  qtyReady: number;
   qtyInProduction: number;
   qtyPlanned: number;
   
   dailySales: number;
   daysInventoryOnHand: number;
   reorderPoint: number;
+  leadTimeDemand: number; // NOWE POLE: Popyt w czasie dostawy
   
   nextArrivalDate: string | null;
   daysToNextArrival: number | null;
   
   stockoutGapDays: number;
   predictedStockoutDate: string | null;
+  daysToStockout: number | null;
   
   oldestOrderDate: string | null;
-  plannedProductionStart: string | null; // NOWE: Do sortowania "Data rozp. prod."
+  plannedProductionStart: string | null;
   predictedProductionEnd: string | null;
   
-  decision: 'ORDER NOW' | 'URGENT GAP' | 'WAIT' | 'OK' | 'CRITICAL LOW';
+  decision: DecisionStatus;
 }
 
 export interface HistoryState {

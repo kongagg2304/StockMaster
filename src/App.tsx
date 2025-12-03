@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Boxes, Undo2, Search, Filter, ArrowUp, ArrowDown } from 'lucide-react';
+import { Boxes, Undo2, Search, Filter, ArrowUp, ArrowDown, X } from 'lucide-react'; // Dodano ikonę X
 import { useInventory } from './hooks/useInventory';
 import { calculateProductMetrics } from './lib/utils';
 
@@ -14,8 +14,16 @@ import AddOrderModal from './components/modals/AddOrderModal';
 import SplitBatchModal from './components/modals/SplitBatchModal';
 import WarehouseModal from './components/modals/WarehouseModal';
 
-// POPRAWKA: Usunięto 'ProductMetrics' z importu, zostawiono tylko 'FinishType'
-import type { FinishType } from './lib/types';
+import type { FinishType, DecisionStatus } from './lib/types';
+
+// Mapa priorytetów statusów (im mniejsza liczba, tym wyżej na liście przy sortowaniu rosnącym)
+const STATUS_PRIORITY: Record<DecisionStatus, number> = {
+  'CRITICAL LOW': 1,  // Najważniejszy
+  'URGENT GAP': 2,
+  'ORDER NOW': 3,
+  'WAIT': 4,
+  'OK': 5             // Najmniej ważny
+};
 
 // Klucze sortowania
 type SortKey = 
@@ -25,14 +33,14 @@ type SortKey =
 
 export default function App() {
   const [view, setView] = useState<'dashboard' | 'kanban'>('kanban');
-  const [searchTerm, setSearchTerm] = useState('');
   
-  // Filtry
+  // Filtry - Stan
+  const [searchTerm, setSearchTerm] = useState('');
   const [finishFilter, setFinishFilter] = useState<FinishType | 'All'>('All');
   const [dimensionFilter, setDimensionFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All'); 
 
-  // Sortowanie
+  // Sortowanie - Stan
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -43,6 +51,16 @@ export default function App() {
     const dims = new Set(inventory.products.map(p => p.dimension).filter(Boolean));
     return Array.from(dims).sort();
   }, [inventory.products]);
+
+  // Funkcja czyszcząca wszystkie filtry
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFinishFilter('All');
+    setDimensionFilter('All');
+    setStatusFilter('All');
+    setSortKey('name');
+    setSortDir('asc');
+  };
 
   // --- LOGIKA GŁÓWNA ---
   const processedProducts = useMemo(() => {
@@ -86,7 +104,13 @@ export default function App() {
         case 'predictedProductionEnd': valA = a.metrics.predictedProductionEnd || '9999-99-99'; valB = b.metrics.predictedProductionEnd || '9999-99-99'; break;
         case 'predictedStockoutDate': valA = a.metrics.predictedStockoutDate || '9999-99-99'; valB = b.metrics.predictedStockoutDate || '9999-99-99'; break;
         case 'nextArrivalDate': valA = a.metrics.nextArrivalDate || '9999-99-99'; valB = b.metrics.nextArrivalDate || '9999-99-99'; break;
-        case 'decision': valA = a.metrics.decision; valB = b.metrics.decision; break;
+        
+        // NOWA LOGIKA SORTOWANIA STATUSU (PRIORYTETY)
+        case 'decision': 
+          valA = STATUS_PRIORITY[a.metrics.decision]; 
+          valB = STATUS_PRIORITY[b.metrics.decision]; 
+          break;
+          
         default: return 0;
       }
 
@@ -133,8 +157,8 @@ export default function App() {
         </div>
 
         {/* Dolny rząd: Filtry i Sortowanie */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <div className="flex items-center gap-2 pr-4 border-r border-slate-200">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 justify-between">
+            <div className="flex items-center gap-2">
                <Filter size={14} className="text-slate-400" />
                
                {/* 1. Filtr Wykończenia */}
@@ -168,22 +192,34 @@ export default function App() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                >
                   <option value="All">Status: Wszystkie</option>
-                  <option value="ORDER NOW">🔥 Zamawiaj</option>
-                  <option value="URGENT GAP">⚠️ Luka Czasowa</option>
-                  <option value="WAIT">⏳ Czekaj</option>
                   <option value="CRITICAL LOW">🛑 Stan Krytyczny</option>
-                  <option value="OK">✅ OK</option>
+                  <option value="URGENT GAP">⚠️ Luka Czasowa</option>
+                  <option value="ORDER NOW">🔥 Zamawiaj</option>
+                  <option value="WAIT">⏳ Czekaj na dostawę</option>
+                  <option value="OK">✅ Ok</option>
                </select>
+
+                {/* NOWY: Przycisk Wyczyść Filtry */}
+               {(searchTerm || finishFilter !== 'All' || dimensionFilter !== 'All' || statusFilter !== 'All') && (
+                 <button 
+                    onClick={clearFilters}
+                    className="flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded border border-slate-300 transition-colors"
+                    title="Resetuj wszystkie filtry"
+                 >
+                    <X size={12} /> Wyczyść
+                 </button>
+               )}
             </div>
 
             {/* SEKJCA SORTOWANIA */}
-            <div className="flex items-center gap-1 pl-2">
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-200">
                <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Sortuj:</span>
                <select 
                   className="bg-white border border-slate-300 text-xs rounded px-2 py-1 outline-none focus:border-blue-500 cursor-pointer font-medium min-w-[140px]"
                   value={sortKey}
                   onChange={(e) => setSortKey(e.target.value as SortKey)}
                >
+                  <option value="decision">Priorytet (Status)</option>
                   <option value="name">Alfabetycznie</option>
                   <option value="totalStock">Stan Magazynowy</option>
                   <option value="totalInTransit">W Transporcie</option>
@@ -195,14 +231,13 @@ export default function App() {
                   <option value="plannedProductionStart">Data Rozp. Produkcji</option>
                   <option value="predictedProductionEnd">Data Zak. Produkcji</option>
                   <option value="nextArrivalDate">Następna Dostawa</option>
-                  <option value="decision">Priorytet (Status)</option>
                </select>
 
                {/* Przycisk Kierunku */}
                <button 
                  onClick={() => setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')}
                  className="p-1 border border-slate-300 rounded hover:bg-slate-50 bg-white text-slate-600"
-                 title={sortDir === 'asc' ? "Rosnąco" : "Malejąco"}
+                 title={sortDir === 'asc' ? "Rosnąco (Od najważniejszych)" : "Malejąco"}
                >
                  {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
                </button>
