@@ -34,9 +34,8 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
   const anyIncoming = totalInTransit + incomingSupply; 
   const netInventoryPosition = totalStock + anyIncoming; 
 
-  // --- 2. SPRZEDAŻ (POPRAWIONA LOGIKA - Rzeczywista Rotacja) ---
+  // --- 2. SPRZEDAŻ (Rzeczywista Rotacja) ---
   // Jeśli użytkownik nie podał dni dostępności, zakładamy 180 (pełny okres)
-  // Zabezpieczamy też przed dzieleniem przez 0 (minimum 1 dzień)
   const daysActive = Math.max(1, Math.min(180, product.daysInStockLast6Months || 180));
   
   const daily6m = (product.sales6Months || 0) / daysActive;
@@ -49,13 +48,14 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
   const safetyStockQty = dailySales * product.safetyStockDays;
   const reorderPoint = leadTimeDemand + safetyStockQty;
 
-  // --- 4. SYMULACJA ---
+  // --- 4. SYMULACJA DOSTĘPNOŚCI (FORECASTING) ---
   const arrivalsMap: Record<string, number> = {};
 
   const scheduleArrival = (batch: Batch, defaultDelay: number, dateField?: string) => {
     let arrivalDate: Date;
     if (dateField && batch[dateField as keyof Batch]) {
       arrivalDate = new Date(batch[dateField as keyof Batch] as string);
+      // Specyfika dla produkcji: data końca produkcji + transport (75 dni + 14 dni buforu)
       if (batch.status === 'in_production') arrivalDate = addDays(arrivalDate, 14 + 75);
     } else {
       arrivalDate = addDays(today, defaultDelay);
@@ -65,10 +65,31 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     arrivalsMap[dateStr] = (arrivalsMap[dateStr] || 0) + batch.quantity;
   };
 
+  // 4a. Harmonogramowanie pewnych statusów
   productBatches.filter(b => b.status === 'transit').forEach(b => scheduleArrival(b, ESTIMATED_TIMES.TRANSIT, 'eta'));
   productBatches.filter(b => b.status === 'ready').forEach(b => scheduleArrival(b, ESTIMATED_TIMES.READY));
   productBatches.filter(b => b.status === 'in_production').forEach(b => scheduleArrival(b, ESTIMATED_TIMES.IN_PRODUCTION, 'productionEndDate'));
+  
+  // 4b. Harmonogramowanie PLANOWANEJ produkcji (Nowość)
+  productBatches.filter(b => b.status === 'planned').forEach(b => scheduleArrival(b, ESTIMATED_TIMES.PLANNED, 'plannedProductionDate'));
 
+  // 4c. Harmonogramowanie ZAMÓWIEŃ (Nowość - obsługa Lead Time)
+  productBatches.filter(b => b.status === 'ordered').forEach(b => {
+    let arrivalDate: Date;
+    if (b.orderDate) {
+       // Jeśli jest data zamówienia, dodajemy Lead Time produktu
+       arrivalDate = addDays(new Date(b.orderDate), product.leadTimeDays);
+    } else {
+       // Jeśli brak daty, zakładamy dzisiaj + Lead Time
+       arrivalDate = addDays(today, product.leadTimeDays);
+    }
+
+    if (arrivalDate < today) arrivalDate = today;
+    const dateStr = formatDate(arrivalDate);
+    arrivalsMap[dateStr] = (arrivalsMap[dateStr] || 0) + b.quantity;
+  });
+
+  // --- 5. SYMULACJA DZIENNA (WYKRYWANIE STOCKOUT) ---
   let simulatedStock = totalStock;
   let predictedStockoutDate: string | null = null;
   let isStockout = false;
@@ -77,25 +98,29 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
     for (let i = 1; i <= 365; i++) {
       const currentDate = addDays(today, i);
       const dateStr = formatDate(currentDate);
+      
+      // Odejmujemy dzienną sprzedaż
       simulatedStock -= dailySales;
+      
+      // Dodajemy dostawy, które wchodzą w danym dniu (teraz łącznie z Ordered/Planned)
       if (arrivalsMap[dateStr]) simulatedStock += arrivalsMap[dateStr];
       
       if (simulatedStock < 0 && !isStockout) {
         predictedStockoutDate = dateStr;
         isStockout = true;
-        break; 
+        break; // Znaleźliśmy pierwszą datę braku, przerywamy
       }
     }
   }
 
-  // --- 5. DNI DO BRAKU ---
+  // Obliczanie dni do braku
   let daysToStockout: number | null = null;
   if (predictedStockoutDate) {
     const stockoutDateObj = new Date(predictedStockoutDate);
     daysToStockout = Math.ceil((stockoutDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // --- 6. DATY POMOCNICZE ---
+  // --- 6. DATY POMOCNICZE (DO RAPORTU) ---
   const arrivalDates = Object.keys(arrivalsMap).sort();
   const nextArrivalStr = arrivalDates.find(d => d >= formatDate(today));
   let nextArrivalDate: string | null = null;
@@ -127,17 +152,30 @@ export const calculateProductMetrics = (product: Product, allBatches: Batch[]): 
      predictedProductionEnd = productionBatches[0].productionEndDate || null;
   }
 
-  // --- 7. DECYZJA ---
+  // --- 7. DECYZJA LOGISTYCZNA ---
   let decision: ProductMetrics['decision'] = 'OK';
 
   if (anyIncoming === 0 && totalStock <= safetyStockQty) {
+    // Brak towaru w drodze + niski stan = KRYTYCZNIE
     decision = 'CRITICAL LOW';
   } else if (netInventoryPosition < reorderPoint) {
+    // Suma towaru (nawet z zamówionym) nie pokrywa zapotrzebowania w Lead Time
     decision = 'ORDER NOW';
-  } else if (totalInTransit > 0 && predictedStockoutDate) {
-    decision = 'WAIT';
-  } else if (incomingSupply > 0 && predictedStockoutDate) {
-    decision = 'URGENT GAP';
+  } else if (predictedStockoutDate) {
+    // Ilościowo OK (netInventoryPosition > ROP), ale symulacja wykazała dziurę czasową.
+    
+    // Teraz URGENT GAP pojawi się tylko, jeśli nawet zamówiony towar nie zdąży na czas.
+    // Jeśli zdąży - predictedStockoutDate będzie null (lub odległe), więc decyja będzie OK.
+    
+    // Logika pomocnicza:
+    // Jeśli mamy towar w transporcie (już płynie), to po prostu czekamy -> WAIT
+    // Jeśli towar jest tylko "na papierze" (ordered/planned/production) i nie zdąży -> URGENT GAP
+    
+    if (totalInTransit > 0) {
+       decision = 'WAIT';
+    } else {
+       decision = 'URGENT GAP';
+    }
   } else {
     decision = 'OK';
   }
